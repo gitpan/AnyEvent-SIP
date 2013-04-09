@@ -2,23 +2,38 @@ use strict;
 use warnings;
 package AnyEvent::SIP;
 {
-  $AnyEvent::SIP::VERSION = '0.001';
+  $AnyEvent::SIP::VERSION = '0.002';
 }
 # ABSTRACT: Fusing together AnyEvent and Net::SIP
 
 use Net::SIP::Dispatcher::AnyEvent;
 use Net::SIP::Dispatcher::Eventloop;
 
-{
-    no warnings qw<redefine once>;
-    *Net::SIP::Dispatcher::Eventloop::new = sub {
-        Net::SIP::Dispatcher::AnyEvent->new
-    };
+sub import {
+    my $class = shift;
+    my @args  = @_;
+
+    if ( @args && $args[0] eq 'compat' ) {
+        no warnings qw<redefine once>;
+        *Net::SIP::Dispatcher::Eventloop::new = sub {
+            Net::SIP::Dispatcher::AnyEvent->new( _net_sip_compat => 1 )
+        };
+    } else {
+        my $interval;
+        if ( @args && $args[0] eq 'stopvar_interval' ) {
+            $interval = $args[1];
+        }
+
+        no warnings qw<redefine once>;
+        *Net::SIP::Dispatcher::Eventloop::new = sub {
+            Net::SIP::Dispatcher::AnyEvent->new( _ae_interval => $interval )
+        };
+    }
 }
 
 1;
 
-__END__
+
 
 =pod
 
@@ -28,7 +43,7 @@ AnyEvent::SIP - Fusing together AnyEvent and Net::SIP
 
 =head1 VERSION
 
-version 0.001
+version 0.002
 
 =head1 SYNOPSIS
 
@@ -58,6 +73,10 @@ version 0.001
     );
 
     $cv->recv;
+
+    # compat-mode
+    use AnyEvent::SIP 'compat';
+    ...
 
 =head1 DESCRIPTION
 
@@ -106,16 +125,29 @@ locally.
     # which calls AnyEvent's instead
     $ua->loop( 1, \$stopvar );
 
-=head1 WARNING
+=head1 COMPATIBILITY
 
 L<Net::SIP> requires dispatchers (event loops) to check their stopvars
 (condition variables) every single iteration of the loop. In my opinion, it's
 a wasteful and heavy operation. When it comes to loops like L<EV>, they run
-a B<lot> of cycles, and it's probably not very effecient. Take that under
-advisement.
+a B<lot> of cycles, and it's not very effecient and causes heavy load.
 
-I would happily accept any suggestions on how to improve this. Meanwhile,
-we're using L<AnyEvent::AggressiveIdle>.
+To avoid that, the default mode for L<AnyEvent::SIP> is to set up a timer
+to check the condition variables. Default interval is: B<0.2> seconds.
+
+To configure this, you can set up the interval on import:
+
+    use AnyEvent::SIP stopvar_interval => 0.1;
+    ...
+
+If you want to keep AnyEvent::SIP completely compatible with the L<Net::SIP>
+requirement (which fixes at least one bugfix test I haven't found out why yet),
+you can add the compat option on import;
+
+    use AnyEvent::SIP 'compat';
+    ...
+
+I can't promise not to change any of this.
 
 =head1 AUTHOR
 
@@ -129,3 +161,7 @@ This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.
 
 =cut
+
+
+__END__
+

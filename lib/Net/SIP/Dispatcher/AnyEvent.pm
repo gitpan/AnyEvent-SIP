@@ -2,28 +2,34 @@ use strict;
 use warnings;
 package Net::SIP::Dispatcher::AnyEvent;
 {
-  $Net::SIP::Dispatcher::AnyEvent::VERSION = '0.001';
+  $Net::SIP::Dispatcher::AnyEvent::VERSION = '0.002';
 }
 # ABSTRACT: AnyEvent dispatcher for Net::SIP
 
 use AnyEvent;
-use AnyEvent::AggressiveIdle;
 use Net::SIP::Dispatcher::AnyEvent::Timer;
 use Net::SIP::Util 'invoke_callback';
+use AnyEvent::AggressiveIdle ();
 
 sub new {
     my $class = shift;
-    my $self  = bless { _cv => AE::cv }, $class;
+    my %args  = @_;
+    my $self  = bless {
+        _cv          => AE::cv,
+        _ae_interval => $args{'_ae_interval'} || 0.2,
+    }, $class;
 
-    $self->{'_idle'} = aggressive_idle {
-        exists $self->{'_stopvar'} or return;
-        foreach my $var ( @{ $self->{'_stopvar'} } ) {
-            if ( ${$var} ) {
-                delete $self->{'_stopvar'};
-                $self->{'_cv'}->send;
+    if ( $args{'_net_sip_compat'} ) {
+        $self->{'_idle'} = AnyEvent::AggressiveIdle::aggressive_idle {
+            exists $self->{'_stopvar'} or return;
+            foreach my $var ( @{ $self->{'_stopvar'} } ) {
+                if ( ${$var} ) {
+                    delete $self->{'_stopvar'};
+                    $self->{'_cv'}->send;
+                }
             }
-        }
-    };
+        };
+    }
 
     return $self;
 }
@@ -70,6 +76,19 @@ sub loop {
 
     $self->{'_stopvar'} = \@stopvar;
 
+    if ( ! $self->{'_net_sip_compat'} and @stopvar ) {
+        # set up a timer to check stopvars
+        $self->{'_stopvar_timer'} = AE::timer 0, $self->{'_ae_interval'}, sub {
+            foreach my $var (@stopvar) {
+                if ( ${$var} ) {
+                    delete $self->{'_stopvar_timer'};
+                    delete $self->{'_stopvar'};
+                    $self->{'_cv'}->send;
+                }
+            }
+        }
+    }
+
     if ($timeout) {
         my $timer; $timer = AE::timer $timeout, 0, sub {
             undef $timer;
@@ -85,7 +104,7 @@ sub loop {
 
 1;
 
-__END__
+
 
 =pod
 
@@ -95,7 +114,7 @@ Net::SIP::Dispatcher::AnyEvent - AnyEvent dispatcher for Net::SIP
 
 =head1 VERSION
 
-version 0.001
+version 0.002
 
 =head1 DESCRIPTION
 
@@ -111,14 +130,21 @@ directly, the only method you care about is C<loop>.
 
 =head1 WARNING
 
-L<Net::SIP> requires dispatchers (event loops) to check their stopvars
-(condition variables) every single iteration of the loop. In my opinion, it's
-a wasteful and heavy operation. When it comes to loops like L<EV>, they run
-a B<lot> of cycles, and it's probably not very effecient. Take that under
-advisement.
+The compatible mode of Net::SIP::Dispatcher::AnyEvent is pretty stressful on
+your CPU. Please read the compatibility mode section in L<AnyEvent::SIP>.
 
-I would happily accept any suggestions on how to improve this. Meanwhile,
-we're using L<AnyEvent::AggressiveIdle>.
+=head1 ATTRIBUTES
+
+=head2 _net_sip_compat
+
+Whether to be fully compatible with L<Net::SIP> with the expense of possible
+side-effects on the CPU load of your processes. Please read compatibility mode
+in L<AnyEvent::SIP>.
+
+=head2 _ae_interval
+
+In normal (non-compatible) mode, how often to check for stopvars.
+Default: B<0.2> seconds.
 
 =head1 INTERNAL ATTRIBUTES
 
@@ -139,6 +165,10 @@ Main condition variable allowing for looping.
 =head2 _fd_watchers
 
 All the watched file descriptors.
+
+=head2 _stopvar_timer
+
+Timer holding stopvar checking. Only for default non-compatible mode.
 
 =head1 METHODS
 
@@ -186,3 +216,7 @@ This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.
 
 =cut
+
+
+__END__
+

@@ -40,7 +40,7 @@ my %module_build_args = (
     "Sawyer X <xsawyerx\@cpan.org>"
   ],
   "dist_name" => "AnyEvent-SIP",
-  "dist_version" => "0.001",
+  "dist_version" => "0.002",
   "license" => "perl",
   "module_name" => "AnyEvent::SIP",
   "recommends" => {},

@@ -28,5 +28,6 @@ t/17_call_with_reinvite_and_auth.t
 t/18_register_with_auth_step_by_step.t
 t/19_call_with_dtmf.t
 t/anyevent.t
+t/database.drop
 t/release-pod-syntax.t
 t/testlib.pl
